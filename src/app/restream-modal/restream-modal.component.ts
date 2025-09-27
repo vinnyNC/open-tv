@@ -22,6 +22,8 @@ export class RestreamModalComponent implements OnInit, OnDestroy {
   networkInfo?: NetworkInfo;
   selectedIP?: string;
   toUnlisten: UnlistenFn[] = [];
+  retryMessage?: string;
+  isRetrying = false;
 
   constructor(
     private error: ErrorService,
@@ -38,6 +40,22 @@ export class RestreamModalComponent implements OnInit, OnDestroy {
       this.ngZone.run(() => {
         this.started = true;
         this.loading = false;
+        this.isRetrying = false;
+        this.retryMessage = undefined;
+      });
+    }).then((unlisten) => this.toUnlisten.push(unlisten));
+
+    listen<string>("restream_connection_lost", (event) => {
+      this.ngZone.run(() => {
+        this.isRetrying = true;
+        this.retryMessage = event.payload;
+        this.started = false;
+      });
+    }).then((unlisten) => this.toUnlisten.push(unlisten));
+
+    listen<number>("restream_retry_attempt", (event) => {
+      this.ngZone.run(() => {
+        this.retryMessage = `Re-stream connection lost. Retrying... (Attempt ${event.payload})`;
       });
     }).then((unlisten) => this.toUnlisten.push(unlisten));
   }

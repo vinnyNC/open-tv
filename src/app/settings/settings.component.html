@@ -121,6 +121,52 @@
 
   <div class="row mt-3 align-items-center">
     <div class="col-4">
+      <span
+        [ngbTooltip]="
+          'Number of times to retry when restream connection is lost. Use 0 for infinite retries.'
+        "
+        >Re-stream retry attempts</span
+      >
+    </div>
+    <div class="col">
+      <input
+        class="form-control"
+        style="width: 10rem"
+        type="number"
+        min="0"
+        [(ngModel)]="settings.restream_retry_count"
+        (ngModelChange)="updateSettings()"
+      />
+      <small class="text-muted">Use 0 for infinite retries</small>
+    </div>
+  </div>
+
+  <div class="row mt-3 align-items-center">
+    <div class="col-4">
+      <span
+        [ngbTooltip]="
+          'Wait time in seconds between retry attempts'
+        "
+        >Re-stream retry wait time</span
+      >
+    </div>
+    <div class="col">
+      <div class="input-group" style="width: 10rem">
+        <input
+          class="form-control"
+          type="number"
+          min="1"
+          max="300"
+          [(ngModel)]="settings.restream_retry_wait"
+          (ngModelChange)="updateSettings()"
+        />
+        <span class="input-group-text">sec</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="row mt-3 align-items-center">
+    <div class="col-4">
       <span>UI Zoom</span>
     </div>
     <div class="col">
