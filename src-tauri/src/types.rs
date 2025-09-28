@@ -76,6 +76,8 @@ pub struct Settings {
     pub enable_hwdec: Option<bool>,
     pub always_ask_save: Option<bool>,
     pub enable_gpu: Option<bool>,
+    pub restream_retry_count: Option<i16>,
+    pub restream_retry_wait: Option<u16>,
 }
 
 #[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]

@@ -29,6 +29,8 @@ export class SettingsComponent {
     enable_hwdec: true,
     always_ask_save: false,
     enable_gpu: false,
+    restream_retry_count: 3,
+    restream_retry_wait: 5,
   };
   viewModeEnum = ViewMode;
   sources: Source[] = [];
@@ -89,6 +91,8 @@ export class SettingsComponent {
       if (this.settings.enable_hwdec == undefined) this.settings.enable_hwdec = true;
       if (this.settings.always_ask_save == undefined) this.settings.always_ask_save = false;
       if (this.settings.enable_gpu == undefined) this.settings.enable_gpu = false;
+      if (this.settings.restream_retry_count == undefined) this.settings.restream_retry_count = 3;
+      if (this.settings.restream_retry_wait == undefined) this.settings.restream_retry_wait = 5;
     });
   }
 

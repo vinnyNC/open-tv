@@ -12,4 +12,6 @@ export class Settings {
   enable_hwdec?: boolean;
   always_ask_save?: boolean;
   enable_gpu?: boolean;
+  restream_retry_count?: number;
+  restream_retry_wait?: number;
 }

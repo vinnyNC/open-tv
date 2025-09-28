@@ -106,24 +106,77 @@ pub async fn start_restream(
 ) -> Result<()> {
     let stop = state.lock().await.restream_stop_signal.clone();
     stop.store(false, std::sync::atomic::Ordering::Relaxed);
-    let restream_dir = get_restream_folder()?;
-    delete_old_segments(&restream_dir).await?;
-    let mut ffmpeg_child = start_ffmpeg_listening(channel, restream_dir.clone())?;
-    let (web_server_tx, web_server_handle) = start_web_server(restream_dir, port).await?;
-    let _ = app.emit("restream_started", true);
-    while !stop.load(std::sync::atomic::Ordering::Relaxed)
-        && ffmpeg_child
-            .try_wait()
-            .map(|option| option.is_none())
-            .unwrap_or(true)
-        && !web_server_handle.is_finished()
-    {
-        tokio::time::sleep(Duration::from_millis(500)).await
+    
+    let settings = get_settings()?;
+    let retry_count = settings.restream_retry_count.unwrap_or(3); // Default to 3 retries
+    let retry_wait_seconds = settings.restream_retry_wait.unwrap_or(5); // Default to 5 seconds
+    
+    let mut attempt = 0;
+    let infinite_retries = retry_count <= 0; // 0 or negative means infinite retries
+    
+    loop {
+        attempt += 1;
+        
+        // Emit retry attempt event (but not for the first attempt)
+        if attempt > 1 {
+            let _ = app.emit("restream_retry_attempt", attempt - 1);
+        }
+        
+        let restream_dir = get_restream_folder()?;
+        delete_old_segments(&restream_dir).await?;
+        
+        let mut ffmpeg_child = match start_ffmpeg_listening(channel.clone(), restream_dir.clone()) {
+            Ok(child) => child,
+            Err(e) => {
+                if infinite_retries || attempt <= retry_count {
+                    let _ = app.emit("restream_connection_lost", format!("Failed to start FFmpeg (attempt {}): {}", attempt, e));
+                    if !stop.load(std::sync::atomic::Ordering::Relaxed) {
+                        tokio::time::sleep(Duration::from_secs(retry_wait_seconds as u64)).await;
+                        continue;
+                    }
+                }
+                return Err(e);
+            }
+        };
+        
+        let (web_server_tx, web_server_handle) = start_web_server(restream_dir, port).await?;
+        let _ = app.emit("restream_started", true);
+        
+        // Monitor the ffmpeg process and web server
+        while !stop.load(std::sync::atomic::Ordering::Relaxed)
+            && ffmpeg_child
+                .try_wait()
+                .map(|option| option.is_none())
+                .unwrap_or(true)
+            && !web_server_handle.is_finished()
+        {
+            tokio::time::sleep(Duration::from_millis(500)).await
+        }
+        
+        // Cleanup current attempt
+        let _ = ffmpeg_child.kill();
+        let _ = web_server_tx.send(true);
+        let _ = ffmpeg_child.wait();
+        let _ = web_server_handle.await;
+        
+        // Check if we should retry
+        if stop.load(std::sync::atomic::Ordering::Relaxed) {
+            // User requested stop, don't retry
+            break;
+        }
+        
+        if infinite_retries || attempt < retry_count {
+            // Emit connection lost event and retry
+            let _ = app.emit("restream_connection_lost", format!("Re-stream connection lost. Retrying... (Attempt {})", attempt));
+            tokio::time::sleep(Duration::from_secs(retry_wait_seconds as u64)).await;
+            continue;
+        } else {
+            // Max retries reached
+            let _ = app.emit("restream_connection_lost", format!("Re-stream connection lost. Maximum retries ({}) reached.", retry_count));
+            break;
+        }
     }
-    let _ = ffmpeg_child.kill();
-    let _ = web_server_tx.send(true);
-    let _ = ffmpeg_child.wait();
-    let _ = web_server_handle.await;
+    
     Ok(())
 }
 
