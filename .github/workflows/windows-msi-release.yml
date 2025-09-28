@@ -1,0 +1,102 @@
+name: Build & Publish Windows MSI on Release
+
+on:
+  release:
+    types: [created]
+
+jobs:
+  windows-msi:
+    name: Build Windows MSI Installer
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Rust (MSVC)
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable-x86_64-pc-windows-msvc
+          override: true
+
+      - name: Download mpv
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          $retryCount = 3; $retryDelay = 5
+          for ($i = 1; $i -le $retryCount; $i++) {
+            try {
+              Invoke-WebRequest -UserAgent "Wget" `
+                -Uri "https://nightly.link/mpv-player/mpv/workflows/build/master/mpv-x86_64-pc-windows-msvc.zip" `
+                -OutFile .\mpv.zip
+              break
+            } catch {
+              Write-Host "Error: $_. Retrying in $retryDelay seconds..."
+              Start-Sleep -Seconds $retryDelay
+            }
+          }
+          New-Item -Path 'C:\open-tv-deps' -ItemType Directory -Force
+          7z e .\mpv.zip -oC:\open-tv-deps mpv.exe vulkan-1.dll
+
+      - name: Download ffmpeg
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          $retryCount = 3; $retryDelay = 5
+          for ($i = 1; $i -le $retryCount; $i++) {
+            try {
+              Invoke-WebRequest -UserAgent "Wget" `
+                -Uri "https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-win64-gpl.zip" `
+                -OutFile .\ffmpeg.zip
+              break
+            } catch {
+              Write-Host "Error: $_. Retrying in $retryDelay seconds..."
+              Start-Sleep -Seconds $retryDelay
+            }
+          }
+          7z e .\ffmpeg.zip -oC:\open-tv-deps ffmpeg-master-latest-win64-gpl/bin/ffmpeg.exe
+
+      - name: Download yt-dlp
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          $retryCount = 3; $retryDelay = 5
+          for ($i = 1; $i -le $retryCount; $i++) {
+            try {
+              Invoke-WebRequest -UserAgent "Wget" `
+                -Uri "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe" `
+                -OutFile yt-dlp.exe
+              break
+            } catch {
+              Write-Host "Error: $_. Retrying in $retryDelay seconds..."
+              Start-Sleep -Seconds $retryDelay
+            }
+          }
+          Move-Item -Path yt-dlp.exe -Destination C:\open-tv-deps -Force
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Install front-end dependencies
+        run: npm ci
+
+      - name: Build front-end assets
+        run: npm run build
+
+      - name: Build Tauri MSI installer
+        working-directory: src-tauri
+        run: |
+          cargo install tauri-cli --force
+          cargo tauri build --release --target x86_64-pc-windows-msvc
+
+      - name: Upload MSI to GitHub Release
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi
+          asset_name: open-tv-${{ github.event.release.tag_name }}.msi
+          asset_content_type: application/octet-stream
