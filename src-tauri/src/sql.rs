@@ -215,6 +215,16 @@ fn apply_migrations() -> Result<()> {
               CREATE UNIQUE INDEX channels_unique ON channels(name, source_id, url, series_id, season_id);
         "#,
         ),
+        M::up(
+            r#"
+              ALTER TABLE sources ADD COLUMN user_agent varchar(500);
+            "#,
+        ),
+        M::up(
+            r#"
+              ALTER TABLE sources ADD COLUMN max_streams integer;
+            "#,
+        ),
     ]);
     migrations.to_latest(&mut sql)?;
     Ok(())
@@ -240,8 +250,8 @@ pub fn create_or_find_source_by_name(tx: &Transaction, source: &Source) -> Resul
         return Ok(id);
     }
     tx.execute(
-    "INSERT INTO sources (name, source_type, url, username, password, use_tvg_id) VALUES (?, ?, ?, ?, ?, ?)",
-    params![source.name, source.source_type.clone() as u8, source.url, source.username, source.password, source.use_tvg_id],
+    "INSERT INTO sources (name, source_type, url, username, password, use_tvg_id, user_agent, max_streams) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    params![source.name, source.source_type.clone() as u8, source.url, source.username, source.password, source.use_tvg_id, source.user_agent, source.max_streams],
     )?;
     Ok(tx.last_insert_rowid())
 }
@@ -622,7 +632,7 @@ fn to_sql_like(query: Option<String>) -> String {
 
 pub fn search_group(filters: Filters) -> Result<Vec<Channel>> {
     let sql = get_conn()?;
-    let offset = filters.page * PAGE_SIZE - PAGE_SIZE;
+    let offset: u16 = filters.page as u16 * PAGE_SIZE as u16 - PAGE_SIZE as u16;
     let query = filters.query.unwrap_or("".to_string());
     let media_types = filters.media_types.context("no media types")?;
     let keywords: Vec<String> = match filters.use_keywords {
@@ -846,6 +856,8 @@ fn row_to_source(row: &Row) -> std::result::Result<Source, rusqlite::Error> {
         url_origin: None,
         enabled: row.get("enabled")?,
         use_tvg_id: row.get("use_tvg_id")?,
+        user_agent: row.get("user_agent")?,
+        max_streams: row.get("max_streams")?,
     })
 }
 
@@ -902,6 +914,8 @@ pub fn get_custom_source(name: String) -> Source {
         url: None,
         url_origin: None,
         use_tvg_id: None,
+        user_agent: None,
+        max_streams: None,
     }
 }
 
@@ -1225,13 +1239,15 @@ pub fn update_source(source: Source) -> Result<()> {
     sql.execute(
         r#"
         UPDATE sources
-        SET username = ?, password = ?, url = ?, use_tvg_id = ?
+        SET username = ?, password = ?, url = ?, use_tvg_id = ?, user_agent = ?, max_streams = ?
         WHERE id = ?"#,
         params![
             source.username,
             source.password,
             source.url,
             source.use_tvg_id,
+            source.user_agent,
+            source.max_streams,
             source.id
         ],
     )?;
